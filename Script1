@@ -1,0 +1,84 @@
+import pyautogui
+import pyperclip
+import tkinter
+import autoit
+import time
+import math
+from PIL import Image
+import json
+import keyboard
+
+with open("settings.json",'r', encoding="utf8", errors='ignore') as f:
+    s = json.load(f)
+
+image = Image.open("images/" + s['image'] + ".png")
+rate = s['rate']
+row = s['row']
+x1 = s['x1']
+y1 = s['y1']
+x2 = s['x2']
+y2 = s['y2']
+run = s['run']
+diagnostic = s['diagnostic']
+checkcoord = s['checkcoord']
+keyStart = s['keyStart']
+keySkip = s['keySkip']
+version = "KRONOWARE V2.4a"
+
+print(version + ". Press " + keyStart + " to start. Press " + keySkip + " to skip rows.")
+
+while True:
+    if keyboard.is_pressed(keyStart):
+        break
+
+image = image.convert("RGB")
+stepx = math.floor((x2-x1)/31)
+stepy = math.floor((y2-y1)/31)
+
+y1 = y1 + stepy * row
+if (run == 1):
+    dy1 = y1
+    for y in range(row,32,1):
+        t0 = time.time()
+        dx1 = x1
+        autoit.mouse_move(dx1, dy1, rate)
+        for x in range(0,32,1):
+            if keyboard.is_pressed(keySkip):
+                break
+            color = image.getpixel((x, y))
+            hexc = '%02x%02x%02x' % color
+            pyperclip.copy(hexc)
+            autoit.mouse_move(633, 819, rate)
+            autoit.mouse_click()
+            autoit.mouse_move(632, 735, rate)
+            autoit.mouse_click()
+            clipboard = tkinter.Tk().clipboard_get()
+            pyautogui.write(clipboard)
+            autoit.mouse_move(633, 819, rate)
+            autoit.mouse_click()
+            autoit.mouse_move(dx1, dy1, rate)
+            autoit.mouse_click()
+            dx1 = dx1 + stepx
+            if (x == 8 and y == row):
+                t1 = time.time()
+                minutes = math.floor(128*(t1-t0)/60)
+                seconds = math.floor(128*(t1-t0)) - 60*minutes
+                print("Estimated time until finish: " + str(minutes) + " minutes, " + str(seconds) + " seconds")
+        dy1 = dy1 + stepy
+
+if (checkcoord == 1):
+    print("X: " + str(pyautogui.position().x) + ", Y: " + str(pyautogui.position().y))
+
+if (diagnostic == 1):
+    dx1 = x1
+    for x in range(0, 32, 1):
+        time.sleep(0.1)
+        autoit.mouse_move(dx1, y1, 0)
+        dx1 = dx1 + stepx
+    time.sleep(1)
+    autoit.mouse_move(x1,y1)
+    dy1 = y1
+    for y in range(row, 32, 1):
+        time.sleep(0.1)
+        autoit.mouse_move(x1, dy1, 0)
+        dy1 = dy1 + stepy
