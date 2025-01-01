@@ -160,7 +160,6 @@ with open(settingsPath,'r', encoding="utf8", errors='ignore') as f:
     s = json.load(f)
 
 
-speed = math.floor(10 / s['speed'])
 canvasX1 = s['canvasX1']
 canvasY1 = s['canvasY1']
 canvasX2 = s['canvasX2']
@@ -168,8 +167,9 @@ canvasY2 = s['canvasY2']
 run = s['run']
 keySkip = s['keySkip']
 
-def generate(entry):
+def generate(entry, speed):
 
+    genSpeed = math.floor(10/speed)
     time.sleep(2)
     global canvasX1,canvasY1,canvasX2,canvasY2
 
@@ -178,8 +178,6 @@ def generate(entry):
     stepy = math.floor((canvasY2-canvasY1)/31)
 
     if (run == 1):
-        autoit.mouse_move(603, 833, speed)
-        autoit.mouse_click()
         dy1 = canvasY1
         for y in range(0,32,1):
             t0 = time.time()
@@ -190,15 +188,16 @@ def generate(entry):
                 color = image.getpixel((x, y))
                 hexc = '%02x%02x%02x' % color
                 pyperclip.copy(hexc)
-                autoit.mouse_move(603, 833, speed)
+                autoit.mouse_move(603, 833, genSpeed)
                 autoit.mouse_click()
-                autoit.mouse_move(602, 736, speed)
+                autoit.mouse_move(602, 736, genSpeed)
                 autoit.mouse_click()
+                time.sleep(0.2)
                 clipboard = pyperclip.paste()
                 pyautogui.write(clipboard)
-                autoit.mouse_move(838, 467, speed)
+                autoit.mouse_move(838, 467, genSpeed)
                 autoit.mouse_click()
-                autoit.mouse_move(dx1, dy1, speed)
+                autoit.mouse_move(dx1, dy1, genSpeed)
                 autoit.mouse_click()
                 dx1 = dx1 + stepx
                 if (x == 16 and y == 0):
@@ -207,7 +206,7 @@ def generate(entry):
                     seconds = math.floor(128*(t1-t0)) - 60*minutes
                     print("Estimated time until finish: " + str(minutes) + " minutes, " + str(seconds) + " seconds")
             dy1 = dy1 + stepy
-            autoit.mouse_move(dx1, dy1, speed)
+            autoit.mouse_move(dx1, dy1, genSpeed)
 
     if (run == 2):
         print("X: " + str(pyautogui.position().x) + ", Y: " + str(pyautogui.position().y))
@@ -269,7 +268,7 @@ def centerWindow():
 
 def generateImage():
     print("Generating...")
-    generate(str(entry.get()))
+    generate(str(entry.get()), int(entry2.get()))
 
 ####################################################################################################
 
@@ -285,18 +284,24 @@ root.iconbitmap(os.path.join(workspace, "icons", "beasticon.ico"))
 root.geometry("600x300")
 root.after(100, centerWindow)
 
-label = customtkinter.CTkLabel(root, font=("Consolas", 11), text="PixelWare v1.3.0")
+label = customtkinter.CTkLabel(root, font=("Consolas", 11), text="PixelWare v1.3.1")
 label.place(relx=0.02, rely=0.01, anchor="nw")
 
-label2 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Name or URL of your image:")
-label2.place(relx=0.1, rely=0.35, anchor="w")
+label2 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Image reference:")
+label2.place(relx=0.07, rely=0.23, anchor="w")
+
+label3 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Generator speed:")
+label3.place(relx=0.07, rely=0.43, anchor="w")
 
 entry = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10)  # Text box for user input
-entry.place(relx=0.1, rely=0.45, anchor="w")
+entry.place(relx=0.07, rely=0.30, anchor="w")
 entry.bind("<KeyRelease>", lambda event: displayImageEntry())
 
+entry2 = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10)  # Text box for user input
+entry2.place(relx=0.07, rely=0.50, anchor="w")
+
 button1 = customtkinter.CTkButton(root, font=("Consolas",14), text="Generate", width=100, height=35, command=lambda: generateImage())
-button1.place(relx=0.1, rely=0.65, anchor="w")
+button1.place(relx=0.07, rely=0.7, anchor="w")
 
 imageLabel = customtkinter.CTkLabel(root, image=defaultImage, text = "")
 imageLabel.place(relx=0.6, rely=0.5, anchor="w")  # Position in the center of the window
