@@ -10,17 +10,24 @@ import json
 import keyboard
 import os
 import requests
-import pyautogui
-import pyperclip
-import tkinter
-from tkinter import font
-import autoit
-from PIL import Image
-from PIL import ImageFont, ImageTk
-from io import BytesIO
-
 import subprocess
 import sys
+from io import BytesIO
+
+import pyautogui
+import pyperclip
+import autoit
+import tkinter
+from tkinter import *
+import customtkinter
+from PIL import Image, ImageFont, ImageTk
+
+####################################################################################################
+
+# CHECK IF PYTHON PACKAGES ARE INSTALLED
+
+####################################################################################################
+
 
 # Function to install a package using pip
 def install(package):
@@ -31,7 +38,8 @@ required_libraries = [
     'pyautogui',
     'pyperclip',
     'autoit',
-    'PIL'  # Pillow includes Image, ImageFont, and ImageTk
+    'PIL',  # Pillow includes Image, ImageFont, and ImageTk
+    'customtkinter'
 ]
 
 # Check and install missing libraries
@@ -45,7 +53,7 @@ for lib in required_libraries:
 # Check for tkinter separately, as it's part of the standard library but may not be installed on all systems
 try:
     import tkinter
-    from tkinter import font
+    from tkinter import *
 except ImportError:
     print("tkinter not found, installing...")
     install('tkinter')  # tkinter might need to be installed separately on Linux in some cases
@@ -88,6 +96,7 @@ def resizeImage(imageName):
     folder = os.path.join(workspace, "images") # Folder containing the images
     extensions = [".png", ".jpg"] # Try both .png and .jpg extensions for local files
     imagePath = None
+    img = None
 
     # If imageName starts with "http" or "https", treat it as a URL
     if imageName.startswith("http://") or imageName.startswith("https://"):
@@ -106,34 +115,35 @@ def resizeImage(imageName):
                 imagePath = potentialPath
                 break
 
-        # If the image wasn't found, raise an error
-        if imagePath is None:
-            raise FileNotFoundError(f"Image '{imageName}' not found as .png or .jpg in folder '{folder}'.")
-
-        # Open the image from the local file
-        img = Image.open(imagePath)
+        if imagePath == None:
+            print("Image path not found")
+            # raise FileNotFoundError(f"Image '{imageName}' not found as .png or .jpg in folder '{folder}'.")
+        else:
+            img = Image.open(imagePath)
 
     # Get the size of the image (width, height)
-    width, height = img.size
 
-    # Calculate the dimensions for the square crop (use the smaller dimension)
-    if width > height:
-        # Crop the sides of the image (cut left and right)
-        left = (width - height) // 2
-        top = 0
-        right = left + height
-        bottom = height
+    if img != None:
+        width, height = img.size
+                # Calculate the dimensions for the square crop (use the smaller dimension)
+        if width > height:
+            # Crop the sides of the image (cut left and right)
+            left = (width - height) // 2
+            top = 0
+            right = left + height
+            bottom = height
+        else:
+            # Crop the top and bottom of the image (cut top and bottom)
+            top = (height - width) // 2
+            left = 0
+            right = width
+            bottom = top + width
+        croppedImage = img.crop((left, top, right, bottom)) # Crop the image (this will remove edges and center it)
+        resizedImage = croppedImage.resize((32, 32)) # Resize the cropped square image to 32x32 pixels
+        resizedImage = resizedImage.convert("RGB") # Convert the image to RGB (in case it's RGBA or grayscale)
+        return resizedImage # Return the resized image
     else:
-        # Crop the top and bottom of the image (cut top and bottom)
-        top = (height - width) // 2
-        left = 0
-        right = width
-        bottom = top + width
-
-    croppedImage = img.crop((left, top, right, bottom)) # Crop the image (this will remove edges and center it)
-    resizedImage = croppedImage.resize((32, 32)) # Resize the cropped square image to 32x32 pixels
-    resizedImage = resizedImage.convert("RGB") # Convert the image to RGB (in case it's RGBA or grayscale)
-    return resizedImage # Return the resized image
+        return None
 
 
 
@@ -225,11 +235,22 @@ def generate(entry):
 
 ####################################################################################################
 
-root = tkinter.Tk()
-root.title("PixelWare")
-root.geometry("400x350")
+defaultImagePath = Image.open(os.path.join(workspace, "icons", "default.png"))
+defaultImage = customtkinter.CTkImage(light_image=defaultImagePath, size=(200, 200))
 
-def center_window():
+# Function to update the displayed image in Tkinter
+def displayImageEntry():
+    resizedImage = resizeImage(entry.get())  # Resize to 100x100 pixels
+        
+    if resizedImage != None:
+        # Convert the PIL image to customtkinter compatible format
+        ctkImage = customtkinter.CTkImage(light_image=resizedImage, size=(200, 200))
+        imageLabel.configure(image=ctkImage)
+        imageLabel.image = ctkImage  # Keep a reference to the image to avoid garbage collection
+    else:
+        imageLabel.configure(image=defaultImage)
+
+def centerWindow():
     # Get the screen width and height
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
@@ -245,25 +266,39 @@ def center_window():
     # Position the window in the center of the screen
     root.geometry(f'{window_width}x{window_height}+{position_left}+{position_top}')
 
-root.configure(bg='#161616')
-root.after(100, center_window)
-root.iconbitmap(os.path.join(workspace, "icons", "beasticon.ico"))
 
-
-label = tkinter.Label(root, text="PixelWare v1.2.0", fg="white", bg="#161616", font=("Consolas", 14))
-label.pack(pady=20)
-
-label2 = tkinter.Label(root, text="Name or URL of your image:", fg="white", bg="#161616", font=("Consolas", 14))
-label2.pack(pady=20)
-
-entry = tkinter.Entry(root, font=("Consolas", 14), bg="#161616", fg="white", insertbackground='white')  # Text box for user input
-entry.pack(pady=10)
-
-def submitAction():
-    print("generating...")
+def generateImage():
+    print("Generating...")
     generate(str(entry.get()))
 
-generateButton = tkinter.Button(root, text="Generate", command=submitAction, fg="white", bg="#262626", font=("Consolas", 14))
-generateButton.place(relx=0.5, rely=0.7, anchor="center")
+####################################################################################################
+
+import ctypes
+myappid = u'mycompany.myproduct.subproduct.version'
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+customtkinter.set_appearance_mode("dark")
+customtkinter.set_default_color_theme("dark-blue")
+
+root = customtkinter.CTk()
+root.title("PixelWare")
+root.iconbitmap(os.path.join(workspace, "icons", "beasticon.ico"))
+root.geometry("600x300")
+root.after(100, centerWindow)
+
+label = customtkinter.CTkLabel(root, font=("Consolas", 11), text="PixelWare v1.3.0")
+label.place(relx=0.02, rely=0.01, anchor="nw")
+
+label2 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Name or URL of your image:")
+label2.place(relx=0.1, rely=0.35, anchor="w")
+
+entry = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10)  # Text box for user input
+entry.place(relx=0.1, rely=0.45, anchor="w")
+entry.bind("<KeyRelease>", lambda event: displayImageEntry())
+
+button1 = customtkinter.CTkButton(root, font=("Consolas",14), text="Generate", width=100, height=35, command=lambda: generateImage())
+button1.place(relx=0.1, rely=0.65, anchor="w")
+
+imageLabel = customtkinter.CTkLabel(root, image=defaultImage, text = "")
+imageLabel.place(relx=0.6, rely=0.5, anchor="w")  # Position in the center of the window
 
 root.mainloop()
