@@ -250,7 +250,7 @@ root.after(100, center_window)
 root.iconbitmap(os.path.join(workspace, "icons", "beasticon.ico"))
 
 
-label = tkinter.Label(root, text="PixelWare v3.1.0", fg="white", bg="#161616", font=("Consolas", 14))
+label = tkinter.Label(root, text="PixelWare v1.2.0", fg="white", bg="#161616", font=("Consolas", 14))
 label.pack(pady=20)
 
 label2 = tkinter.Label(root, text="Name or URL of your image:", fg="white", bg="#161616", font=("Consolas", 14))
