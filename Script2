@@ -73,11 +73,8 @@ print("All libraries are installed. You can now use them.")
 currentDirectory = os.path.dirname(os.path.abspath(__file__))
 # If you want to go up one directory to reference the 'PixelWare' folder
 parentDirectory = os.path.dirname(currentDirectory)
-
 workspace = parentDirectory  # Path to the main folder (PixelWare)
 settingsPath = os.path.join(workspace, "settings.json")
-
-
 
 
 ####################################################################################################
@@ -86,23 +83,23 @@ settingsPath = os.path.join(workspace, "settings.json")
 
 ####################################################################################################
 
-# Function that resizes an image and returns the new cropped image object
 import os
 import requests
 from PIL import Image
 from io import BytesIO
 
-def resizeImage(imageName):
+# Function that resizes an image and returns the new cropped image object
+def resizeImage(reference):
     folder = os.path.join(workspace, "images") # Folder containing the images
     extensions = [".png", ".jpg"] # Try both .png and .jpg extensions for local files
     imagePath = None
     img = None
 
     # If imageName starts with "http" or "https", treat it as a URL
-    if imageName.startswith("http://") or imageName.startswith("https://"):
+    if reference.startswith("http://") or reference.startswith("https://"):
         # Download the image from the URL
         try:
-            response = requests.get(imageName)
+            response = requests.get(reference)
             response.raise_for_status()  # Check if the request was successful
             img = Image.open(BytesIO(response.content))  # Open image from byte data
         except requests.exceptions.RequestException as e:
@@ -110,7 +107,7 @@ def resizeImage(imageName):
     else:
         # Otherwise, treat it as a local image
         for ext in extensions:
-            potentialPath = os.path.join(folder, imageName + ext)
+            potentialPath = os.path.join(folder, reference + ext)
             if os.path.exists(potentialPath):
                 imagePath = potentialPath
                 break
@@ -151,33 +148,39 @@ def resizeImage(imageName):
 
 ####################################################################################################
 
-# MAIN SCRIPT
+# GENERATE FUNCTION
 
 ####################################################################################################
 
 # Retrieve the settings from settings.json
 with open(settingsPath,'r', encoding="utf8", errors='ignore') as f:
-    s = json.load(f)
+    settings = json.load(f)
 
-
-canvasX1 = s['canvasX1']
-canvasY1 = s['canvasY1']
-canvasX2 = s['canvasX2']
-canvasY2 = s['canvasY2']
-run = s['run']
-keySkip = s['keySkip']
-
+# Generate (entry: name or URL of image, speed: speed of generation)
 def generate(entry, speed):
+
+    canvasX1 = settings['canvasX1']
+    canvasY1 = settings['canvasY1']
+    canvasX2 = settings['canvasX2']
+    canvasY2 = settings['canvasY2']
+    colorButtonX = settings['colorButtonX']
+    colorButtonY = settings['colorButtonY']
+    hexButtonX = settings['hexButtonX']
+    hexButtonY = settings['hexButtonY']
+    exitButtonX = settings['exitButtonX']
+    exitButtonY = settings['exitButtonY']
+    run = settings['run']
+    keySkip = settings['keySkip']
 
     genSpeed = math.floor(10/speed)
     time.sleep(2)
-    global canvasX1,canvasY1,canvasX2,canvasY2
-
-    image = resizeImage(entry)
-    stepx = math.floor((canvasX2-canvasX1)/31)
-    stepy = math.floor((canvasY2-canvasY1)/31)
 
     if (run == 1):
+
+        image = resizeImage(entry)
+        stepx = math.floor((canvasX2-canvasX1)/31)
+        stepy = math.floor((canvasY2-canvasY1)/31)
+
         dy1 = canvasY1
         for y in range(0,32,1):
             t0 = time.time()
@@ -188,14 +191,14 @@ def generate(entry, speed):
                 color = image.getpixel((x, y))
                 hexc = '%02x%02x%02x' % color
                 pyperclip.copy(hexc)
-                autoit.mouse_move(603, 833, genSpeed)
+                autoit.mouse_move(colorButtonX, colorButtonY, genSpeed)
                 autoit.mouse_click()
-                autoit.mouse_move(602, 736, genSpeed)
+                autoit.mouse_move(hexButtonX, hexButtonY, genSpeed)
                 autoit.mouse_click()
                 time.sleep(0.2)
                 clipboard = pyperclip.paste()
                 pyautogui.write(clipboard)
-                autoit.mouse_move(838, 467, genSpeed)
+                autoit.mouse_move(exitButtonX, exitButtonY, genSpeed)
                 autoit.mouse_click()
                 autoit.mouse_move(dx1, dy1, genSpeed)
                 autoit.mouse_click()
@@ -234,7 +237,7 @@ def generate(entry, speed):
 
 ####################################################################################################
 
-defaultImagePath = Image.open(os.path.join(workspace, "icons", "default.png"))
+defaultImagePath = Image.open(os.path.join(workspace, "assets", "default.png"))
 defaultImage = customtkinter.CTkImage(light_image=defaultImagePath, size=(200, 200))
 
 # Function to update the displayed image in Tkinter
@@ -265,7 +268,7 @@ def centerWindow():
     # Position the window in the center of the screen
     root.geometry(f'{window_width}x{window_height}+{position_left}+{position_top}')
 
-
+# Function to start the image generation process
 def generateImage():
     print("Generating...")
     generate(str(entry.get()), int(entry2.get()))
@@ -280,9 +283,10 @@ customtkinter.set_default_color_theme("dark-blue")
 
 root = customtkinter.CTk()
 root.title("PixelWare")
-root.iconbitmap(os.path.join(workspace, "icons", "beasticon.ico"))
+root.iconbitmap(os.path.join(workspace, "assets", "beasticon.ico"))
 root.geometry("600x300")
 root.after(100, centerWindow)
+root.configure(bg="#252525")
 
 label = customtkinter.CTkLabel(root, font=("Consolas", 11), text="PixelWare v1.3.1")
 label.place(relx=0.02, rely=0.01, anchor="nw")
@@ -293,17 +297,20 @@ label2.place(relx=0.07, rely=0.23, anchor="w")
 label3 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Generator speed:")
 label3.place(relx=0.07, rely=0.43, anchor="w")
 
-entry = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10)  # Text box for user input
+entry = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10, corner_radius=0, border_width=1, fg_color="#272727")
 entry.place(relx=0.07, rely=0.30, anchor="w")
 entry.bind("<KeyRelease>", lambda event: displayImageEntry())
 
-entry2 = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10)  # Text box for user input
+entry2 = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10, corner_radius=0, border_width=1, fg_color="#272727")
 entry2.place(relx=0.07, rely=0.50, anchor="w")
 
-button1 = customtkinter.CTkButton(root, font=("Consolas",14), text="Generate", width=100, height=35, command=lambda: generateImage())
+button1 = customtkinter.CTkButton(root, font=("Consolas",14), text="Generate", width=100, height=35, corner_radius=0, border_width=1, fg_color="#007bbd", command=lambda: generateImage())
 button1.place(relx=0.07, rely=0.7, anchor="w")
 
-imageLabel = customtkinter.CTkLabel(root, image=defaultImage, text = "")
-imageLabel.place(relx=0.6, rely=0.5, anchor="w")  # Position in the center of the window
+frame = customtkinter.CTkFrame(root, border_width=5, border_color="#323232", corner_radius=0)
+frame.place(relx=0.6, rely=0.5, anchor="w")
+
+imageLabel = customtkinter.CTkLabel(frame, image=defaultImage, text = "")
+imageLabel.place(relx=0.5, rely=0.5, relwidth=0.96, relheight=0.96, anchor="center")  # Center it within the frame
 
 root.mainloop()
