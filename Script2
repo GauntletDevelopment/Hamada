@@ -247,7 +247,7 @@ def center_window():
 
 root.configure(bg='#161616')
 root.after(100, center_window)
-root.iconbitmap(os.path.join(workspace, "icons", "beast.ico"))
+root.iconbitmap(os.path.join(workspace, "icons", "beasticon.ico"))
 
 
 label = tkinter.Label(root, text="PixelWare v3.1.0", fg="white", bg="#161616", font=("Consolas", 14))
