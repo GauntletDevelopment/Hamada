@@ -1,0 +1,269 @@
+####################################################################################################
+
+# IMPORT MODULES
+
+####################################################################################################
+
+import time
+import math
+import json
+import keyboard
+import os
+import requests
+import pyautogui
+import pyperclip
+import tkinter
+from tkinter import font
+import autoit
+from PIL import Image
+from PIL import ImageFont, ImageTk
+from io import BytesIO
+
+import subprocess
+import sys
+
+# Function to install a package using pip
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# List of required libraries
+required_libraries = [
+    'pyautogui',
+    'pyperclip',
+    'autoit',
+    'PIL'  # Pillow includes Image, ImageFont, and ImageTk
+]
+
+# Check and install missing libraries
+for lib in required_libraries:
+    try:
+        __import__(lib)  # Try importing the library
+    except ImportError:
+        print(f"{lib} not found, installing...")
+        install(lib)
+
+# Check for tkinter separately, as it's part of the standard library but may not be installed on all systems
+try:
+    import tkinter
+    from tkinter import font
+except ImportError:
+    print("tkinter not found, installing...")
+    install('tkinter')  # tkinter might need to be installed separately on Linux in some cases
+
+print("All libraries are installed. You can now use them.")
+
+
+
+####################################################################################################
+
+# DEFINE THE HAMADAWARE DIRECTORY
+
+####################################################################################################
+
+
+# Get the directory where the current script (main.py) is located
+currentDirectory = os.path.dirname(os.path.abspath(__file__))
+# If you want to go up one directory to reference the 'HamadaWare' folder
+parentDirectory = os.path.dirname(currentDirectory)
+
+workspace = parentDirectory  # Path to the main folder (HamadaWare)
+settingsPath = os.path.join(workspace, "settings.json")
+
+
+
+
+####################################################################################################
+
+# FUNCTIONS
+
+####################################################################################################
+
+# Function that resizes an image and returns the new cropped image object
+import os
+import requests
+from PIL import Image
+from io import BytesIO
+
+def resizeImage(imageName):
+    folder = os.path.join(workspace, "images") # Folder containing the images
+    extensions = [".png", ".jpg"] # Try both .png and .jpg extensions for local files
+    imagePath = None
+
+    # If imageName starts with "http" or "https", treat it as a URL
+    if imageName.startswith("http://") or imageName.startswith("https://"):
+        # Download the image from the URL
+        try:
+            response = requests.get(imageName)
+            response.raise_for_status()  # Check if the request was successful
+            img = Image.open(BytesIO(response.content))  # Open image from byte data
+        except requests.exceptions.RequestException as e:
+            raise FileNotFoundError(f"Failed to download image from URL: {e}")
+    else:
+        # Otherwise, treat it as a local image
+        for ext in extensions:
+            potentialPath = os.path.join(folder, imageName + ext)
+            if os.path.exists(potentialPath):
+                imagePath = potentialPath
+                break
+
+        # If the image wasn't found, raise an error
+        if imagePath is None:
+            raise FileNotFoundError(f"Image '{imageName}' not found as .png or .jpg in folder '{folder}'.")
+
+        # Open the image from the local file
+        img = Image.open(imagePath)
+
+    # Get the size of the image (width, height)
+    width, height = img.size
+
+    # Calculate the dimensions for the square crop (use the smaller dimension)
+    if width > height:
+        # Crop the sides of the image (cut left and right)
+        left = (width - height) // 2
+        top = 0
+        right = left + height
+        bottom = height
+    else:
+        # Crop the top and bottom of the image (cut top and bottom)
+        top = (height - width) // 2
+        left = 0
+        right = width
+        bottom = top + width
+
+    croppedImage = img.crop((left, top, right, bottom)) # Crop the image (this will remove edges and center it)
+    resizedImage = croppedImage.resize((32, 32)) # Resize the cropped square image to 32x32 pixels
+    resizedImage = resizedImage.convert("RGB") # Convert the image to RGB (in case it's RGBA or grayscale)
+    return resizedImage # Return the resized image
+
+
+
+
+
+####################################################################################################
+
+# MAIN SCRIPT
+
+####################################################################################################
+
+# Retrieve the settings from settings.json
+with open(settingsPath,'r', encoding="utf8", errors='ignore') as f:
+    s = json.load(f)
+
+
+speed = math.floor(10 / s['speed'])
+canvasX1 = s['canvasX1']
+canvasY1 = s['canvasY1']
+canvasX2 = s['canvasX2']
+canvasY2 = s['canvasY2']
+run = s['run']
+keySkip = s['keySkip']
+
+def generate(entry):
+
+    time.sleep(2)
+    global canvasX1,canvasY1,canvasX2,canvasY2
+
+    image = resizeImage(entry)
+    stepx = math.floor((canvasX2-canvasX1)/31)
+    stepy = math.floor((canvasY2-canvasY1)/31)
+
+    if (run == 1):
+        autoit.mouse_move(603, 833, speed)
+        autoit.mouse_click()
+        dy1 = canvasY1
+        for y in range(0,32,1):
+            t0 = time.time()
+            dx1 = canvasX1
+            for x in range(0,32,1):
+                if keyboard.is_pressed(keySkip):
+                    break
+                color = image.getpixel((x, y))
+                hexc = '%02x%02x%02x' % color
+                pyperclip.copy(hexc)
+                autoit.mouse_move(603, 833, speed)
+                autoit.mouse_click()
+                autoit.mouse_move(602, 736, speed)
+                autoit.mouse_click()
+                clipboard = tkinter.Tk().clipboard_get()
+                pyautogui.write(clipboard)
+                autoit.mouse_move(838, 467, speed)
+                autoit.mouse_click()
+                autoit.mouse_move(dx1, dy1, speed)
+                autoit.mouse_click()
+                dx1 = dx1 + stepx
+                if (x == 16 and y == 0):
+                    t1 = time.time()
+                    minutes = math.floor(128*(t1-t0)/60)
+                    seconds = math.floor(128*(t1-t0)) - 60*minutes
+                    print("Estimated time until finish: " + str(minutes) + " minutes, " + str(seconds) + " seconds")
+            dy1 = dy1 + stepy
+            autoit.mouse_move(dx1, dy1, speed)
+
+    if (run == 2):
+        print("X: " + str(pyautogui.position().x) + ", Y: " + str(pyautogui.position().y))
+
+    if (run == 3):
+        dx1 = canvasX1
+        for x in range(0, 32, 1):
+            time.sleep(0.1)
+            autoit.mouse_move(dx1, canvasY1, 0)
+            dx1 = dx1 + stepx
+        time.sleep(1)
+        autoit.mouse_move(canvasX1,canvasY1)
+        dy1 = canvasY1
+        for y in range(0, 32, 1):
+            time.sleep(0.1)
+            autoit.mouse_move(canvasX1, dy1, 0)
+            dy1 = dy1 + stepy
+
+
+
+
+####################################################################################################
+
+# GRAPHICAL USER INTERFACE
+
+####################################################################################################
+
+root = tkinter.Tk()
+root.title("HamadaWare")
+root.geometry("400x350")
+
+def center_window():
+    # Get the screen width and height
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+
+    # Get the current window width and height
+    window_width = root.winfo_width()
+    window_height = root.winfo_height()
+
+    # Calculate the position to center the window
+    position_top = (screen_height // 2) - (window_height // 2)
+    position_left = (screen_width // 2) - (window_width // 2)
+
+    # Position the window in the center of the screen
+    root.geometry(f'{window_width}x{window_height}+{position_left}+{position_top}')
+
+root.configure(bg='#161616')
+root.after(100, center_window)
+root.iconbitmap(os.path.join(workspace, "icons", "hamada4.ico"))
+
+
+label = tkinter.Label(root, text="HamadaWare v3.0.1", fg="white", bg="#161616", font=("Consolas", 14))
+label.pack(pady=20)
+
+label2 = tkinter.Label(root, text="Name or URL of your image:", fg="white", bg="#161616", font=("Consolas", 14))
+label2.pack(pady=20)
+
+entry = tkinter.Entry(root, font=("Consolas", 14), bg="#161616", fg="white", insertbackground='white')  # Text box for user input
+entry.pack(pady=10)
+
+def submitAction():
+    print("generating...")
+    generate(str(entry.get()))
+
+generateButton = tkinter.Button(root, text="Generate", command=submitAction, fg="white", bg="#262626", font=("Consolas", 14))
+generateButton.place(relx=0.5, rely=0.7, anchor="center")
+
+root.mainloop()
