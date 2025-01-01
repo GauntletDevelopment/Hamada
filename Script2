@@ -56,17 +56,17 @@ print("All libraries are installed. You can now use them.")
 
 ####################################################################################################
 
-# DEFINE THE HAMADAWARE DIRECTORY
+# DEFINE THE PIXELWARE DIRECTORY
 
 ####################################################################################################
 
 
 # Get the directory where the current script (main.py) is located
 currentDirectory = os.path.dirname(os.path.abspath(__file__))
-# If you want to go up one directory to reference the 'HamadaWare' folder
+# If you want to go up one directory to reference the 'PixelWare' folder
 parentDirectory = os.path.dirname(currentDirectory)
 
-workspace = parentDirectory  # Path to the main folder (HamadaWare)
+workspace = parentDirectory  # Path to the main folder (PixelWare)
 settingsPath = os.path.join(workspace, "settings.json")
 
 
@@ -184,7 +184,7 @@ def generate(entry):
                 autoit.mouse_click()
                 autoit.mouse_move(602, 736, speed)
                 autoit.mouse_click()
-                clipboard = tkinter.Tk().clipboard_get()
+                clipboard = pyperclip.paste()
                 pyautogui.write(clipboard)
                 autoit.mouse_move(838, 467, speed)
                 autoit.mouse_click()
@@ -226,7 +226,7 @@ def generate(entry):
 ####################################################################################################
 
 root = tkinter.Tk()
-root.title("HamadaWare")
+root.title("PixelWare")
 root.geometry("400x350")
 
 def center_window():
@@ -247,10 +247,10 @@ def center_window():
 
 root.configure(bg='#161616')
 root.after(100, center_window)
-root.iconbitmap(os.path.join(workspace, "icons", "hamada4.ico"))
+root.iconbitmap(os.path.join(workspace, "icons", "beast.ico"))
 
 
-label = tkinter.Label(root, text="HamadaWare v3.0.2", fg="white", bg="#161616", font=("Consolas", 14))
+label = tkinter.Label(root, text="PixelWare v3.1.0", fg="white", bg="#161616", font=("Consolas", 14))
 label.pack(pady=20)
 
 label2 = tkinter.Label(root, text="Name or URL of your image:", fg="white", bg="#161616", font=("Consolas", 14))
