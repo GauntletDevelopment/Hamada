@@ -1,26 +1,21 @@
 ####################################################################################################
 
-# IMPORT MODULES
+# DEFAULT MODULES
 
 ####################################################################################################
 
-import time
-import math
+import ctypes
+import hashlib
+from io import BytesIO
 import json
 import keyboard
+import math
 import os
 import requests
 import subprocess
 import sys
-from io import BytesIO
-
-import pyautogui
-import pyperclip
-import autoit
-import tkinter
-from tkinter import *
-import customtkinter
-from PIL import Image, ImageFont, ImageTk
+import threading
+import time
 
 ####################################################################################################
 
@@ -39,7 +34,9 @@ required_libraries = [
     'pyperclip',
     'autoit',
     'PIL',  # Pillow includes Image, ImageFont, and ImageTk
-    'customtkinter'
+    'customtkinter',
+    'PyQt5',
+    'pynput'
 ]
 
 # Check and install missing libraries
@@ -48,7 +45,10 @@ for lib in required_libraries:
         __import__(lib)  # Try importing the library
     except ImportError:
         print(f"{lib} not found, installing...")
-        install(lib)
+        if lib == 'PIL':  # Special case for PIL
+            install('Pillow')
+        else:
+            install(lib)
 
 # Check for tkinter separately, as it's part of the standard library but may not be installed on all systems
 try:
@@ -59,6 +59,53 @@ except ImportError:
     install('tkinter')  # tkinter might need to be installed separately on Linux in some cases
 
 print("All libraries are installed. You can now use them.")
+
+
+####################################################################################################
+
+# IMPORT MODULES
+
+####################################################################################################
+
+
+import autoit
+import pyautogui
+import pyperclip
+import tkinter
+from tkinter import filedialog
+import customtkinter
+from PIL import Image
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+import traceback
+import pynput
+
+####################################################################################################
+
+# ERROR CATCHING
+
+####################################################################################################
+
+def handle_exception(exc_type, exc_value, exc_tb):
+    # Only handle uncaught exceptions
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+
+    # Create a formatted error message
+    tb_str = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    error_message = f"An unexpected error occurred:\n\n{tb_str}"
+
+    # Show the error in a QMessageBox
+    app = QApplication.instance()  # Get the current QApplication instance
+    QMessageBox.critical(None, "Error", error_message)
+
+    # Optionally, print to console for debugging
+    print(error_message)
+
+# Set the custom exception hook globally
+sys.excepthook = handle_exception
 
 
 
@@ -74,6 +121,7 @@ currentDirectory = os.path.dirname(os.path.abspath(__file__))
 # If you want to go up one directory to reference the 'PixelWare' folder
 parentDirectory = os.path.dirname(currentDirectory)
 workspace = parentDirectory  # Path to the main folder (PixelWare)
+assets = os.path.join(workspace, "assets")
 settingsPath = os.path.join(workspace, "settings.json")
 
 
@@ -83,21 +131,15 @@ settingsPath = os.path.join(workspace, "settings.json")
 
 ####################################################################################################
 
-import os
-import requests
-from PIL import Image
-from io import BytesIO
 
 # Function that resizes an image and returns the new cropped image object
 def resizeImage(reference):
-    folder = os.path.join(workspace, "images") # Folder containing the images
-    extensions = [".png", ".jpg"] # Try both .png and .jpg extensions for local files
+    print("Accepted reference: " + reference)
     imagePath = None
     img = None
 
     # If imageName starts with "http" or "https", treat it as a URL
-    if reference.startswith("http://") or reference.startswith("https://"):
-        # Download the image from the URL
+    if isinstance(reference, str) and reference.startswith("https"): # Download the image from the URL
         try:
             response = requests.get(reference)
             response.raise_for_status()  # Check if the request was successful
@@ -106,11 +148,8 @@ def resizeImage(reference):
             raise FileNotFoundError(f"Failed to download image from URL: {e}")
     else:
         # Otherwise, treat it as a local image
-        for ext in extensions:
-            potentialPath = os.path.join(folder, reference + ext)
-            if os.path.exists(potentialPath):
-                imagePath = potentialPath
-                break
+        if os.path.exists(reference):
+            imagePath = reference
 
         if imagePath == None:
             print("Image path not found")
@@ -148,17 +187,35 @@ def resizeImage(reference):
 
 ####################################################################################################
 
-# GENERATE FUNCTION
+# FUNCTIONS
 
 ####################################################################################################
 
-# Retrieve the settings from settings.json
 with open(settingsPath,'r', encoding="utf8", errors='ignore') as f:
     settings = json.load(f)
 
-# Generate (entry: name or URL of image, speed: speed of generation)
-def generate(entry, speed):
+exitLoopX = False
+exitLoopY = False
+exitLoopLockX = threading.Lock()
+exitLoopLockY = threading.Lock()
 
+def checkPress():
+    global exitLoopX, exitLoopY
+    while True:
+        time.sleep(0.03)
+        if keyboard.is_pressed("g"):
+            with exitLoopLockY:
+                exitLoopY = True
+        if keyboard.is_pressed("f"):
+            with exitLoopLockX:
+                exitLoopX = True
+
+# Generate
+def generate(run):
+
+    threading.Thread(target=checkPress, daemon=True).start()
+
+    global exitLoopX, exitLoopY
     canvasX1 = settings['canvasX1']
     canvasY1 = settings['canvasY1']
     canvasX2 = settings['canvasX2']
@@ -169,25 +226,34 @@ def generate(entry, speed):
     hexButtonY = settings['hexButtonY']
     exitButtonX = settings['exitButtonX']
     exitButtonY = settings['exitButtonY']
-    run = settings['run']
-    keySkip = settings['keySkip']
-
-    genSpeed = math.floor(10/speed)
+    stepx = math.floor((canvasX2-canvasX1)/31)
+    stepy = math.floor((canvasY2-canvasY1)/31)
     time.sleep(2)
 
     if (run == 1):
 
+        entry = currentSelectedFile
+        speed = window.getGeneratorSpeed()
+        genSpeed = math.floor(10/speed)
         image = resizeImage(entry)
-        stepx = math.floor((canvasX2-canvasX1)/31)
-        stepy = math.floor((canvasY2-canvasY1)/31)
-
         dy1 = canvasY1
+
         for y in range(0,32,1):
             t0 = time.time()
             dx1 = canvasX1
+
+            with exitLoopLockY:
+                if exitLoopY:  # Check if exitLoop is True
+                    exitLoopY = False  # Reset for next generation
+                    break  # Break out of the inner loop
+                
             for x in range(0,32,1):
-                if keyboard.is_pressed(keySkip):
-                    break
+
+                with exitLoopLockX:
+                    if exitLoopX or exitLoopY == True:  # Check if exitLoop is True
+                        exitLoopX = False  # Reset for next generation
+                        break  # Break out of the inner loop
+
                 color = image.getpixel((x, y))
                 hexc = '%02x%02x%02x' % color
                 pyperclip.copy(hexc)
@@ -203,114 +269,512 @@ def generate(entry, speed):
                 autoit.mouse_move(dx1, dy1, genSpeed)
                 autoit.mouse_click()
                 dx1 = dx1 + stepx
-                if (x == 16 and y == 0):
+                if (x == 8 and y == 0):
                     t1 = time.time()
                     minutes = math.floor(128*(t1-t0)/60)
                     seconds = math.floor(128*(t1-t0)) - 60*minutes
-                    print("Estimated time until finish: " + str(minutes) + " minutes, " + str(seconds) + " seconds")
+                    # statusLabel.configure(text=f"Estimated time: {minutes} minutes, {seconds} seconds")
             dy1 = dy1 + stepy
             autoit.mouse_move(dx1, dy1, genSpeed)
 
-    if (run == 2):
-        print("X: " + str(pyautogui.position().x) + ", Y: " + str(pyautogui.position().y))
-
-    if (run == 3):
+    elif (run == 2):
         dx1 = canvasX1
         for x in range(0, 32, 1):
-            time.sleep(0.1)
+            time.sleep(0.08)
             autoit.mouse_move(dx1, canvasY1, 0)
             dx1 = dx1 + stepx
-        time.sleep(1)
-        autoit.mouse_move(canvasX1,canvasY1)
+        time.sleep(2)
         dy1 = canvasY1
         for y in range(0, 32, 1):
-            time.sleep(0.1)
+            time.sleep(0.08)
             autoit.mouse_move(canvasX1, dy1, 0)
             dy1 = dy1 + stepy
 
+    # statusLabel.configure(text="")
 
 
 
 ####################################################################################################
 
-# GRAPHICAL USER INTERFACE
+# GRAPHICAL USER INTERFACE (VARIABLES)
 
 ####################################################################################################
 
-defaultImagePath = Image.open(os.path.join(workspace, "assets", "default.png"))
-defaultImage = customtkinter.CTkImage(light_image=defaultImagePath, size=(200, 200))
+currentSelectedFile = None # This is the image URL or file currently selected to be generated
 
-# Function to update the displayed image in Tkinter
-def displayImageEntry():
-    resizedImage = resizeImage(entry.get())  # Resize to 100x100 pixels
-        
-    if resizedImage != None:
-        # Convert the PIL image to customtkinter compatible format
-        ctkImage = customtkinter.CTkImage(light_image=resizedImage, size=(200, 200))
-        imageLabel.configure(image=ctkImage)
-        imageLabel.image = ctkImage  # Keep a reference to the image to avoid garbage collection
-    else:
-        imageLabel.configure(image=defaultImage)
 
-def centerWindow():
-    # Get the screen width and height
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-
-    # Get the current window width and height
-    window_width = root.winfo_width()
-    window_height = root.winfo_height()
-
-    # Calculate the position to center the window
-    position_top = (screen_height // 2) - (window_height // 2)
-    position_left = (screen_width // 2) - (window_width // 2)
-
-    # Position the window in the center of the screen
-    root.geometry(f'{window_width}x{window_height}+{position_left}+{position_top}')
-
-# Function to start the image generation process
-def generateImage():
-    print("Generating...")
-    generate(str(entry.get()), int(entry2.get()))
 
 ####################################################################################################
 
-import ctypes
+# GRAPHICAL USER INTERFACE (STYLES)
+
+####################################################################################################
+
 myappid = u'mycompany.myproduct.subproduct.version'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-customtkinter.set_appearance_mode("dark")
-customtkinter.set_default_color_theme("dark-blue")
 
-root = customtkinter.CTk()
-root.title("PixelWare")
-root.iconbitmap(os.path.join(workspace, "assets", "beasticon.ico"))
-root.geometry("600x300")
-root.after(100, centerWindow)
-root.configure(bg="#252525")
+stylePreset = """
+        QLabel {
+            font-family: 'Segoe UI';
+            font-size: 12px;
+            color: #9c9c9c;
+            border: 1px solid white;
+            border-radius: 6px;
+            background-color: transparent; /* Optional, can be customized */
+            padding: 0px; /* Optional for better text alignment */
+        }
 
-label = customtkinter.CTkLabel(root, font=("Consolas", 11), text="PixelWare v1.3.1")
-label.place(relx=0.02, rely=0.01, anchor="nw")
+        QLineEdit {
+            font-family: 'Segoe UI';
+            font-size: 14px;
+            color: white;
+            border: 1px solid white;
+            border-radius: 6px;
+            background-color: transparent; /* Optional, can be customized */
+            padding: 0px; /* Optional for better text alignment */
+        }
 
-label2 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Image reference:")
-label2.place(relx=0.07, rely=0.23, anchor="w")
+        QPushButton {
+            font-family: 'Segoe UI';
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            border: 1px solid white;
+            border-radius: 6px;
+            background-color: transparent;
+            padding: 0px; /* Optional for better text alignment */
+        }
+        QPushButton:hover {
+            background-color: #555555; /* Hover color */
+            border-color: #AAAAAA;    /* Optional: Change border on hover */
+        }
+        QPushButton:pressed {
+            background-color: #222222; /* Clicked color */
+            border-color: #888888;    /* Optional: Change border on click */
+        }
+        """
 
-label3 = customtkinter.CTkLabel(root, font=("Consolas", 14), text="Generator speed:")
-label3.place(relx=0.07, rely=0.43, anchor="w")
+stylePreset2 = """
+        QPushButton {
+            font-family: 'Segoe UI';
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            border: 1px solid white;
+            border-radius: 6px;
+            background-color: #007bbd;
+            padding: 0px; /* Optional for better text alignment */
+        }
+        QPushButton:hover {
+            background-color: #555555; /* Hover color */
+            border-color: #AAAAAA;    /* Optional: Change border on hover */
+        }
+        QPushButton:pressed {
+            background-color: #222222; /* Clicked color */
+            border-color: #888888;    /* Optional: Change border on click */
+        }
+        """
 
-entry = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10, corner_radius=0, border_width=1, fg_color="#272727")
-entry.place(relx=0.07, rely=0.30, anchor="w")
-entry.bind("<KeyRelease>", lambda event: displayImageEntry())
+stylePreset3 = """
+        QPushButton {
+            font-family: 'Segoe UI';
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            border: 1px solid white;
+            border-radius: 6px;
+            background-color: #007bbd;
+            padding: 0px; /* Optional for better text alignment */
+        }
+        QPushButton:hover {
+            background-color: #555555; /* Hover color */
+            border-color: #AAAAAA;    /* Optional: Change border on hover */
+        }
+        QPushButton:pressed {
+            background-color: #222222; /* Clicked color */
+            border-color: #888888;    /* Optional: Change border on click */
+        }
+        """
 
-entry2 = customtkinter.CTkEntry(root, font=("Consolas", 14), width=200, height=10, corner_radius=0, border_width=1, fg_color="#272727")
-entry2.place(relx=0.07, rely=0.50, anchor="w")
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton
+from pynput.mouse import Listener
+import threading
 
-button1 = customtkinter.CTkButton(root, font=("Consolas",14), text="Generate", width=100, height=35, corner_radius=0, border_width=1, fg_color="#007bbd", command=lambda: generateImage())
-button1.place(relx=0.07, rely=0.7, anchor="w")
 
-frame = customtkinter.CTkFrame(root, border_width=5, border_color="#323232", corner_radius=0)
-frame.place(relx=0.6, rely=0.5, anchor="w")
 
-imageLabel = customtkinter.CTkLabel(frame, image=defaultImage, text = "")
-imageLabel.place(relx=0.5, rely=0.5, relwidth=0.96, relheight=0.96, anchor="center")  # Center it within the frame
+####################################################################################################
 
-root.mainloop()
+# GRAPHICAL USER INTERFACE (OBJECTS)
+
+####################################################################################################
+
+# MAIN WINDOW
+
+swindow = None
+
+class MainWindow(QMainWindow):
+
+
+    def centerWindow(self):
+        screen_geometry = QApplication.desktop().screenGeometry() # Get the screen geometry (screen resolution)
+        window_geometry = self.frameGeometry()
+        x = (screen_geometry.width() - window_geometry.width()) // 2 # Calculate the position to center the window
+        y = (screen_geometry.height() - window_geometry.height()) // 2
+        self.move(x, y) # Move the window to the center of the screen
+
+
+    def getGeneratorSpeed(self):
+        return int(self.generatorSpeedEntry.text())
+
+
+    def pilToQPixmap(self, pil_image):
+        img_byte_arr = BytesIO()  # Convert the PIL image to bytes
+        pil_image.save(img_byte_arr, format='PNG')  # Save image as PNG in a byte stream
+        img_byte_arr = img_byte_arr.getvalue()
+        qimage = QImage.fromData(img_byte_arr) # Create QImage from bytes
+        pixmap = QPixmap.fromImage(qimage).scaled(200,200) # Create QPixmap from QImage
+        return pixmap
+
+
+    # Opens an image and then displays that image using the filePath
+    def selectImageFile(self):
+        global currentSelectedFile
+        filePath = filedialog.askopenfilename(filetypes=[("Image files", "*.png;*.jpg;*.jpeg")]) # Open the file dialog to select a PNG file
+        if filePath:
+            # Display the selected file path or load the image
+            imageName = os.path.basename(filePath)
+            self.displayImage(filePath)
+            print("Displaying...")
+            self.ignoreTextChanged = True
+            self.imageReferenceEntry.setText(imageName)  # Insert the new text
+            self.ignoreTextChanged = False
+            currentSelectedFile = filePath
+
+    
+    # Function to display the image file in Tkinter
+    def displayImage(self, path):
+        global currentSelectedFile
+        resizedImage = resizeImage(path)
+        if resizedImage != None:
+            newPixmap = self.pilToQPixmap(resizedImage) # Convert the PIL image to customtkinter compatible format
+            self.imagePreview.setPixmap(newPixmap) # Update the label's image
+            currentSelectedFile = path
+        else:
+            defaultPixmap = QPixmap(os.path.join(assets, "default.png")).scaled(200, 200)
+            self.imagePreview.setPixmap(defaultPixmap)
+
+
+    # Function to display the image from a URL
+    def displayImageFromEntry(self):
+        if self.ignoreTextChanged == False:
+            print("Displaying...")
+            self.displayImage(self.imageReferenceEntry.text())
+
+
+    def openSettings(self):
+        global swindow
+        print("Opening...")
+        swindow = SettingsWindow()
+        swindow.exec_()
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.ignoreTextChanged = False
+
+        self.setWindowTitle("PixelWare")
+        icon_path = os.path.join(workspace, "assets", "beasticon.ico")  # Adjust this path
+        self.setWindowIcon(QIcon(icon_path))
+        self.setStyleSheet("background-color: #161616;")
+        self.setMinimumSize(540, 280)
+        self.resize(540, 280)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.centerWindow()
+
+        pixelwareLabel = QLabel("PixelWare v1.4.0", self)
+        pixelwareLabel.setFont(QFont("Segoe UI", 8))
+        pixelwareLabel.setStyleSheet("color: white;")
+        pixelwareLabel.move(10, 6)
+
+        self.imageReferenceEntry = QLineEdit(self)
+        self.imageReferenceEntry.textChanged.connect(lambda: self.displayImageFromEntry())
+        self.imageReferenceEntry.resize(200,25)
+        self.imageReferenceEntry.move(40, 80)
+        self.imageReferenceEntry.setPlaceholderText("Image URL")
+        self.imageReferenceEntry.setStyleSheet(stylePreset)
+
+        self.generatorSpeedEntry = QLineEdit(self)
+        self.generatorSpeedEntry.resize(200,25)
+        self.generatorSpeedEntry.move(40, 130)
+        self.generatorSpeedEntry.setPlaceholderText("Generator speed")
+        self.generatorSpeedEntry.setStyleSheet(stylePreset)
+
+        folderButton = QPushButton(self)
+        folderButton.setIcon(QIcon(os.path.join(assets, "folder.png")))  # Set your image path here
+        folderButton.setIconSize(QSize(20, 20))
+        folderButton.resize(20,20)
+        folderButton.move(244,80)
+        folderButton.setStyleSheet("background-color: transparent;")
+        folderButton.clicked.connect(lambda: self.selectImageFile())
+        
+        settingsButton = QPushButton(self)
+        settingsButton.setIcon(QIcon(os.path.join(assets, "settings.png")))  # Set your image path here
+        settingsButton.setIconSize(QSize(20, 20))
+        settingsButton.resize(20,20)
+        settingsButton.move(510,13)
+        settingsButton.setStyleSheet("background-color: transparent;")
+        settingsButton.clicked.connect(self.openSettings)
+
+        generateButton = QPushButton("Generate", self)
+        generateButton.resize(90,30)
+        generateButton.move(40,180)
+        generateButton.setStyleSheet(stylePreset2)
+        generateButton.clicked.connect(lambda: threading.Thread(target=generate, args=(1,)).start())
+
+        diagnosticButton = QPushButton("Diagnostic", self)
+        diagnosticButton.resize(90,30)
+        diagnosticButton.move(150,180)
+        diagnosticButton.setStyleSheet(stylePreset)
+        diagnosticButton.clicked.connect(lambda: threading.Thread(target=generate, args=(2,)).start())
+        
+        # Set up a QLabel to display the image
+        pixmap = QPixmap(os.path.join(assets, "default.png")).scaled(200,200)
+        self.imagePreview = QLabel(self)
+        self.imagePreview.setPixmap(pixmap)
+        self.imagePreview.resize(200,200)
+        self.imagePreview.move(300, 50)
+
+        self.show()
+
+####################################################################################################
+
+# LOGIN WINDOW
+
+class LoginWindow(QDialog):
+
+    def centerWindow(self):
+            # Get the screen geometry (screen resolution)
+            screen_geometry = QApplication.desktop().screenGeometry()
+
+            # Calculate the position to center the window
+            window_geometry = self.frameGeometry()
+            x = (screen_geometry.width() - window_geometry.width()) // 2
+            y = (screen_geometry.height() - window_geometry.height()) // 2
+
+            # Move the window to the center of the screen
+            self.move(x, y)
+
+    # Check the password to see if it matches the hash
+    hash = "844702e23ab920225cd421c75c50d67d31c0b361857280883fce90c65fc65f0b"
+    def checkPassword(self):
+        hashObject = hashlib.sha256(self.passwordEntry.text().encode()).hexdigest()
+        if hashObject == self.hash:
+            self.accept()
+        else:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)  # Set the icon to 'Critical' for an error
+            msg.setText("ERROR: Access denied")               # Set the message text
+            msg.setWindowTitle("Error")        # Set the window title
+            msg.exec_()
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("PixelWare")
+        icon_path = os.path.join(workspace, "assets", "beasticon.ico")  # Adjust this path
+        self.setWindowIcon(QIcon(icon_path))
+        self.setStyleSheet("background-color: #161616;")
+        self.setMinimumSize(280, 250)
+        self.resize(280, 250)
+        self.centerWindow()
+
+        loginLabel = QLabel("Please log in.", self)
+        loginLabel.setStyleSheet("color: white;")
+        loginLabel.setFont(QFont("Segoe UI", 10))
+        loginLabel.setAlignment(Qt.AlignCenter)
+        loginLabel.resize(280,20)
+        loginLabel.move(0, 50)
+
+        self.passwordEntry = QLineEdit(self)
+        self.passwordEntry.resize(200,25)
+        self.passwordEntry.move(40, 80)
+        self.passwordEntry.setPlaceholderText("Password")
+        self.passwordEntry.setStyleSheet(stylePreset)
+
+        loginButton = QPushButton("Log In", self)
+        loginButton.resize(80,30)
+        loginButton.move(100,180)
+        loginButton.setStyleSheet(stylePreset)
+        loginButton.clicked.connect(self.checkPassword)
+
+
+
+####################################################################################################
+
+# SETTINGS WINDOW
+
+class SettingsWindow(QDialog):
+
+    def centerWindow(self):
+            # Get the screen geometry (screen resolution)
+            screen_geometry = QApplication.desktop().screenGeometry()
+
+            # Calculate the position to center the window
+            window_geometry = self.frameGeometry()
+            x = (screen_geometry.width() - window_geometry.width()) // 2
+            y = (screen_geometry.height() - window_geometry.height()) // 2
+
+            # Move the window to the center of the screen
+            self.move(x, y)
+    
+    def __init__(self):
+        super().__init__()
+
+        # Set up the layout
+        self.setWindowTitle("PixelWare")
+        icon_path = os.path.join(workspace, "assets", "beasticon.ico")  # Adjust this path
+        self.setWindowIcon(QIcon(icon_path))
+        self.setStyleSheet("background-color: #161616;")
+        self.setMinimumSize(280, 250)
+        self.resize(280, 250)
+        self.centerWindow()
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.listening_for_clicks = False
+
+        gridLayout = QGridLayout()
+
+        self.canvasTopLeft = QLabel(f"canvasTopLeft: {settings['canvasX1']}, {settings['canvasY1']}", self)
+        self.canvasTopLeft.setStyleSheet(stylePreset)
+        self.canvasTopLeft.setAlignment(Qt.AlignCenter)
+
+        self.canvasBottomRight = QLabel(f"canvasBottomRight: {settings['canvasX2']}, {settings['canvasY2']}", self)
+        self.canvasBottomRight.setStyleSheet(stylePreset)
+        self.canvasBottomRight.setAlignment(Qt.AlignCenter)
+
+        self.colorLabel = QLabel(f"colorButton: {settings['colorButtonX']}, {settings['colorButtonY']}", self)
+        self.colorLabel.setStyleSheet(stylePreset)
+        self.colorLabel.setAlignment(Qt.AlignCenter)
+
+        self.hexPicker = QLabel(f"hexPickerButton: {settings['hexButtonX']}, {settings['hexButtonY']}", self)
+        self.hexPicker.setStyleSheet(stylePreset)
+        self.hexPicker.setAlignment(Qt.AlignCenter)
+
+        self.exitLabel = QLabel(f"exitButton: {settings['exitButtonX']}, {settings['exitButtonY']}", self)
+        self.exitLabel.setStyleSheet(stylePreset)
+        self.exitLabel.setAlignment(Qt.AlignCenter)
+
+        self.canvasTopLeftButton = QPushButton("Edit", self)
+        self.canvasTopLeftButton.setStyleSheet(stylePreset)
+        self.canvasTopLeftButton.clicked.connect(lambda: self.startEditingCoordinates(self.canvasTopLeftButton))
+        self.canvasTopLeftButton.setObjectName("canvasTopLeftButton")
+
+        self.canvasBottomRightButton = QPushButton("Edit", self)
+        self.canvasBottomRightButton.setStyleSheet(stylePreset)
+        self.canvasBottomRightButton.clicked.connect(lambda: self.startEditingCoordinates(self.canvasBottomRightButton))
+        self.canvasBottomRightButton.setObjectName("canvasBottomRightButton")
+
+        self.colorLabelButton = QPushButton("Edit", self)
+        self.colorLabelButton.setStyleSheet(stylePreset)
+        self.colorLabelButton.clicked.connect(lambda: self.startEditingCoordinates(self.colorLabelButton))
+        self.colorLabelButton.setObjectName("colorLabelButton")
+
+        self.hexPickerButton = QPushButton("Edit", self)
+        self.hexPickerButton.setStyleSheet(stylePreset)
+        self.hexPickerButton.clicked.connect(lambda: self.startEditingCoordinates(self.hexPickerButton))
+        self.hexPickerButton.setObjectName("hexPickerButton")
+
+
+        self.exitLabelButton = QPushButton("Edit", self)
+        self.exitLabelButton.setStyleSheet(stylePreset)
+        self.exitLabelButton.clicked.connect(lambda: self.startEditingCoordinates(self.exitLabelButton))
+        self.exitLabelButton.setObjectName("exitLabelButton")
+
+        gridLayout.addWidget(self.canvasTopLeft, 0, 0, 1, 2)
+        gridLayout.addWidget(self.canvasTopLeftButton, 0, 2, 1, 1)
+        gridLayout.addWidget(self.canvasBottomRight, 1, 0, 1, 2)
+        gridLayout.addWidget(self.canvasBottomRightButton, 1, 2, 1, 1)
+        gridLayout.addWidget(self.colorLabel, 2, 0, 1, 2)
+        gridLayout.addWidget(self.colorLabelButton, 2, 2, 1, 1)
+        gridLayout.addWidget(self.hexPicker, 3, 0, 1, 2)
+        gridLayout.addWidget(self.hexPickerButton, 3, 2, 1, 1)
+        gridLayout.addWidget(self.exitLabel, 4, 0, 1, 2)
+        gridLayout.addWidget(self.exitLabelButton, 4, 2, 1, 1)
+        self.setLayout(gridLayout)
+
+    def startEditingCoordinates(self, button):
+        global currentButton, editingCoordinates
+        currentButton = button # Update the current button being edited
+        editingCoordinates = True
+        button.setStyleSheet(stylePreset3) # Change the color of the current button
+
+####################################################################################################
+
+editingCoordinates = False
+mouseCoordinates = None
+currentButton = None
+ 
+def on_click(x, y, button, pressed):
+    global mouseCoordinates, editingCoordinates, currentButton
+    global settings
+    if pressed:
+        if editingCoordinates:
+            editingCoordinates = False
+            currentButton.setStyleSheet(stylePreset) # Reset the color of the current button
+            mouseCoordinates = (x, y)
+            x, y = mouseCoordinates
+
+            # Update coordinates of json file and text of settings labels
+    
+            if id(currentButton) == id(swindow.canvasTopLeftButton):
+                settings["canvasX1"] = x
+                settings["canvasY1"] = y
+                swindow.canvasTopLeft.setText(f"canvasTopLeft: {settings['canvasX1']}, {settings['canvasY1']}")
+                with open(settingsPath,'w', encoding="utf8", errors='ignore') as f:
+                    json.dump(settings, f, indent=4)
+            if id(currentButton) == id(swindow.canvasBottomRightButton):
+                settings["canvasX2"] = x
+                settings["canvasY2"] = y
+                swindow.canvasBottomRight.setText(f"canvasTopLeft: {settings['canvasX2']}, {settings['canvasY2']}")
+                with open(settingsPath,'w', encoding="utf8", errors='ignore') as f:
+                    json.dump(settings, f, indent=4)
+            if id(currentButton) == id(swindow.colorLabelButton):
+                settings["colorButtonX"] = x
+                settings["colorButtonY"] = y
+                swindow.colorLabel.setText(f"colorButton: {settings['colorButtonX']}, {settings['colorButtonY']}")
+                with open(settingsPath,'w', encoding="utf8", errors='ignore') as f:
+                    json.dump(settings, f, indent=4)
+            if id(currentButton) == id(swindow.hexPickerButton):
+                settings["hexButtonX"] = x
+                settings["hexButtonY"] = y
+                swindow.hexPicker.setText(f"hexPickerButton: {settings['hexButtonX']}, {settings['hexButtonY']}")
+                with open(settingsPath,'w', encoding="utf8", errors='ignore') as f:
+                    json.dump(settings, f, indent=4)
+            if id(currentButton) == id(swindow.exitLabelButton):
+                settings["exitButtonX"] = x
+                settings["exitButtonY"] = y
+                swindow.exitLabel.setText(f"exitButton: {settings['exitButtonX']}, {settings['exitButtonY']}")
+                with open(settingsPath,'w', encoding="utf8", errors='ignore') as f:
+                    json.dump(settings, f, indent=4)
+
+# Function to start the listener in a separate thread
+def start_listener():
+    # Start the mouse listener to listen globally
+    listener = Listener(on_click=on_click)
+    listener.start()  # Start the listener in a non-blocking mode
+    listener.join()  # Ensure the listener keeps running
+
+# Create and start the listener thread
+listener_thread = threading.Thread(target=start_listener, daemon=True).start()
+
+app = QApplication([])
+loginWindow = LoginWindow()
+#settingsWindow = SettingsWindow()
+#settingsWindow.exec_()
+
+if loginWindow.exec_() == QDialog.Accepted:
+    # If login is successful, create and show the main window
+    window = MainWindow()
+    app.exec_()  # Start the event loop for the main window
+else:
+    print("Login failed or canceled, application will exit.")
