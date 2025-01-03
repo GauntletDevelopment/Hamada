@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 
 ####################################################################################################
 
@@ -79,7 +80,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 import traceback
-import pynput
+from pynput.mouse import Listener
 
 ####################################################################################################
 
@@ -116,10 +117,8 @@ sys.excepthook = handle_exception
 ####################################################################################################
 
 
-# Get the directory where the current script (main.py) is located
-currentDirectory = os.path.dirname(os.path.abspath(__file__))
-# If you want to go up one directory to reference the 'PixelWare' folder
-parentDirectory = os.path.dirname(currentDirectory)
+currentDirectory = os.path.dirname(os.path.abspath(__file__)) # Get the directory where the current script (main.py) is located
+parentDirectory = os.path.dirname(currentDirectory) # If you want to go up one directory to reference the 'PixelWare' folder
 workspace = parentDirectory  # Path to the main folder (PixelWare)
 assets = os.path.join(workspace, "assets")
 settingsPath = os.path.join(workspace, "settings.json")
@@ -134,7 +133,6 @@ settingsPath = os.path.join(workspace, "settings.json")
 
 # Function that resizes an image and returns the new cropped image object
 def resizeImage(reference):
-    print("Accepted reference: " + reference)
     imagePath = None
     img = None
 
@@ -210,11 +208,10 @@ def checkPress():
             with exitLoopLockX:
                 exitLoopX = True
 
-# Generate
+# Generate the image (run: 1 = generate, 2 = diagnostic)
 def generate(run):
 
     threading.Thread(target=checkPress, daemon=True).start()
-
     global exitLoopX, exitLoopY
     canvasX1 = settings['canvasX1']
     canvasY1 = settings['canvasY1']
@@ -234,26 +231,33 @@ def generate(run):
 
         entry = currentSelectedFile
         speed = window.getGeneratorSpeed()
+        window.statusLabel.setText("Generating... [Press F to skip, G to stop]")
         genSpeed = math.floor(10/speed)
         image = resizeImage(entry)
         dy1 = canvasY1
 
         for y in range(0,32,1):
-            t0 = time.time()
-            dx1 = canvasX1
 
+            t0 = time.time()
             with exitLoopLockY:
                 if exitLoopY:  # Check if exitLoop is True
                     exitLoopY = False  # Reset for next generation
                     break  # Break out of the inner loop
+            
+            dy1 = canvasY1 + (y * (canvasY2 - canvasY1) // 31)
+
                 
             for x in range(0,32,1):
 
+                if x % 4 == 0:
+                    t0 = time.time()
+                
                 with exitLoopLockX:
                     if exitLoopX or exitLoopY == True:  # Check if exitLoop is True
                         exitLoopX = False  # Reset for next generation
                         break  # Break out of the inner loop
 
+                dx1 = canvasX1 + (x * (canvasX2 - canvasX1) // 31)
                 color = image.getpixel((x, y))
                 hexc = '%02x%02x%02x' % color
                 pyperclip.copy(hexc)
@@ -268,30 +272,32 @@ def generate(run):
                 autoit.mouse_click()
                 autoit.mouse_move(dx1, dy1, genSpeed)
                 autoit.mouse_click()
-                dx1 = dx1 + stepx
-                if (x == 8 and y == 0):
+                if ((x-3) % 4 == 0):
                     t1 = time.time()
-                    minutes = math.floor(128*(t1-t0)/60)
-                    seconds = math.floor(128*(t1-t0)) - 60*minutes
-                    # statusLabel.configure(text=f"Estimated time: {minutes} minutes, {seconds} seconds")
-            dy1 = dy1 + stepy
-            autoit.mouse_move(dx1, dy1, genSpeed)
+                    rowsLeft = 31-y
+                    pixelsLeft = (32*rowsLeft)+(31-x)
+                    minutes = math.floor((pixelsLeft/4)*(t1-t0)/60) # Divide pixelsLeft by 4 because we're checking every 4 pixels
+                    seconds = math.floor((pixelsLeft/4)*(t1-t0)) - 60*minutes
+                    window.statusLabel.setText(f"Generating... [Estimated time until finish: {minutes} minutes, {seconds} seconds]")
 
     elif (run == 2):
         dx1 = canvasX1
         for x in range(0, 32, 1):
             time.sleep(0.08)
+            dx1 = canvasX1 + (x * (canvasX2 - canvasX1) // 31)
             autoit.mouse_move(dx1, canvasY1, 0)
-            dx1 = dx1 + stepx
         time.sleep(2)
         dy1 = canvasY1
         for y in range(0, 32, 1):
             time.sleep(0.08)
+            dy1 = canvasY1 + (y * (canvasY2 - canvasY1) // 31)
             autoit.mouse_move(canvasX1, dy1, 0)
-            dy1 = dy1 + stepy
 
-    # statusLabel.configure(text="")
+    window.statusLabel.setText("")
 
+
+def openURL():
+    webbrowser.open("https://www.youtube.com/watch?v=gs8qfL9PNac")  # Replace with your desired YouTube URL
 
 
 ####################################################################################################
@@ -301,7 +307,10 @@ def generate(run):
 ####################################################################################################
 
 currentSelectedFile = None # This is the image URL or file currently selected to be generated
-
+editingCoordinates = False # Can you currently edit coordinates?
+mouseCoordinates = None # Current mouse coordinates
+currentButton = None # Which set coordinates button are you updating?
+swindow = None # Store the current window
 
 
 ####################################################################################################
@@ -396,11 +405,16 @@ stylePreset3 = """
         }
         """
 
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton
-from pynput.mouse import Listener
-import threading
+####################################################################################################
 
+# GRAPHICAL USER INTERFACE (VARIABLES)
 
+####################################################################################################
+
+editingCoordinates = False
+mouseCoordinates = None
+currentButton = None
+swindow = None
 
 ####################################################################################################
 
@@ -410,17 +424,14 @@ import threading
 
 # MAIN WINDOW
 
-swindow = None
+def centerWindow(w):
+    screen_geometry = QApplication.desktop().screenGeometry() # Get the screen geometry (screen resolution)
+    window_geometry = w.frameGeometry()
+    x = (screen_geometry.width() - window_geometry.width()) // 2 # Calculate the position to center the window
+    y = (screen_geometry.height() - window_geometry.height()) // 2
+    w.move(x, y) # Move the window to the center of the screen
 
 class MainWindow(QMainWindow):
-
-
-    def centerWindow(self):
-        screen_geometry = QApplication.desktop().screenGeometry() # Get the screen geometry (screen resolution)
-        window_geometry = self.frameGeometry()
-        x = (screen_geometry.width() - window_geometry.width()) // 2 # Calculate the position to center the window
-        y = (screen_geometry.height() - window_geometry.height()) // 2
-        self.move(x, y) # Move the window to the center of the screen
 
 
     def getGeneratorSpeed(self):
@@ -451,10 +462,10 @@ class MainWindow(QMainWindow):
             currentSelectedFile = filePath
 
     
-    # Function to display the image file in Tkinter
+    # Function to display the image file in Tkinter (path: absolute path to the file)
     def displayImage(self, path):
         global currentSelectedFile
-        resizedImage = resizeImage(path)
+        resizedImage = resizeImage(path) # Call resizeImage with the file path as path
         if resizedImage != None:
             newPixmap = self.pilToQPixmap(resizedImage) # Convert the PIL image to customtkinter compatible format
             self.imagePreview.setPixmap(newPixmap) # Update the label's image
@@ -480,7 +491,6 @@ class MainWindow(QMainWindow):
     def __init__(self):
 
         super().__init__()
-
         self.ignoreTextChanged = False
 
         self.setWindowTitle("PixelWare")
@@ -490,12 +500,19 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(540, 280)
         self.resize(540, 280)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
-        self.centerWindow()
+        centerWindow(self)
 
         pixelwareLabel = QLabel("PixelWare v1.4.0", self)
         pixelwareLabel.setFont(QFont("Segoe UI", 8))
         pixelwareLabel.setStyleSheet("color: white;")
         pixelwareLabel.move(10, 6)
+
+        self.statusLabel = QLabel("", self)
+        self.statusLabel.setFont(QFont("Segoe UI", 8))
+        self.statusLabel.setStyleSheet("color: white;")
+        self.statusLabel.move(0, 252)
+        self.statusLabel.resize(540, 20)
+        self.statusLabel.setAlignment(Qt.AlignCenter)
 
         self.imageReferenceEntry = QLineEdit(self)
         self.imageReferenceEntry.textChanged.connect(lambda: self.displayImageFromEntry())
@@ -537,13 +554,21 @@ class MainWindow(QMainWindow):
         diagnosticButton.move(150,180)
         diagnosticButton.setStyleSheet(stylePreset)
         diagnosticButton.clicked.connect(lambda: threading.Thread(target=generate, args=(2,)).start())
+
+        urlButton = QPushButton(self)
+        urlButton.setIcon(QIcon(os.path.join(assets, "beastlogo.png")))  # Set your image path here
+        urlButton.setIconSize(QSize(20, 20))
+        urlButton.resize(20,20)
+        urlButton.move(485,14)
+        urlButton.setStyleSheet("background-color: transparent;")
+        urlButton.clicked.connect(openURL)
         
         # Set up a QLabel to display the image
         pixmap = QPixmap(os.path.join(assets, "default.png")).scaled(200,200)
         self.imagePreview = QLabel(self)
         self.imagePreview.setPixmap(pixmap)
         self.imagePreview.resize(200,200)
-        self.imagePreview.move(300, 50)
+        self.imagePreview.move(300, 46)
 
         self.show()
 
@@ -553,20 +578,8 @@ class MainWindow(QMainWindow):
 
 class LoginWindow(QDialog):
 
-    def centerWindow(self):
-            # Get the screen geometry (screen resolution)
-            screen_geometry = QApplication.desktop().screenGeometry()
-
-            # Calculate the position to center the window
-            window_geometry = self.frameGeometry()
-            x = (screen_geometry.width() - window_geometry.width()) // 2
-            y = (screen_geometry.height() - window_geometry.height()) // 2
-
-            # Move the window to the center of the screen
-            self.move(x, y)
-
     # Check the password to see if it matches the hash
-    hash = "844702e23ab920225cd421c75c50d67d31c0b361857280883fce90c65fc65f0b"
+    hash = "0ffd1b5296d2152a7472722c96a23ddcd7273339929974ee7493165d68de80eb"
     def checkPassword(self):
         hashObject = hashlib.sha256(self.passwordEntry.text().encode()).hexdigest()
         if hashObject == self.hash:
@@ -579,7 +592,9 @@ class LoginWindow(QDialog):
             msg.exec_()
 
     def __init__(self):
+
         super().__init__()
+        self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
 
         self.setWindowTitle("PixelWare")
         icon_path = os.path.join(workspace, "assets", "beasticon.ico")  # Adjust this path
@@ -587,7 +602,7 @@ class LoginWindow(QDialog):
         self.setStyleSheet("background-color: #161616;")
         self.setMinimumSize(280, 250)
         self.resize(280, 250)
-        self.centerWindow()
+        centerWindow(self)
 
         loginLabel = QLabel("Please log in.", self)
         loginLabel.setStyleSheet("color: white;")
@@ -615,18 +630,6 @@ class LoginWindow(QDialog):
 # SETTINGS WINDOW
 
 class SettingsWindow(QDialog):
-
-    def centerWindow(self):
-            # Get the screen geometry (screen resolution)
-            screen_geometry = QApplication.desktop().screenGeometry()
-
-            # Calculate the position to center the window
-            window_geometry = self.frameGeometry()
-            x = (screen_geometry.width() - window_geometry.width()) // 2
-            y = (screen_geometry.height() - window_geometry.height()) // 2
-
-            # Move the window to the center of the screen
-            self.move(x, y)
     
     def __init__(self):
         super().__init__()
@@ -638,7 +641,7 @@ class SettingsWindow(QDialog):
         self.setStyleSheet("background-color: #161616;")
         self.setMinimumSize(280, 250)
         self.resize(280, 250)
-        self.centerWindow()
+        centerWindow(self)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.listening_for_clicks = False
 
@@ -709,10 +712,6 @@ class SettingsWindow(QDialog):
         button.setStyleSheet(stylePreset3) # Change the color of the current button
 
 ####################################################################################################
-
-editingCoordinates = False
-mouseCoordinates = None
-currentButton = None
  
 def on_click(x, y, button, pressed):
     global mouseCoordinates, editingCoordinates, currentButton
@@ -759,13 +758,10 @@ def on_click(x, y, button, pressed):
 
 # Function to start the listener in a separate thread
 def start_listener():
-    # Start the mouse listener to listen globally
-    listener = Listener(on_click=on_click)
+    listener = Listener(on_click=on_click) # Start the mouse listener to listen globally
     listener.start()  # Start the listener in a non-blocking mode
     listener.join()  # Ensure the listener keeps running
-
-# Create and start the listener thread
-listener_thread = threading.Thread(target=start_listener, daemon=True).start()
+listener_thread = threading.Thread(target=start_listener, daemon=True).start() # Create and start the listener thread
 
 app = QApplication([])
 loginWindow = LoginWindow()
